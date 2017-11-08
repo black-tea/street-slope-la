@@ -1,0 +1,80 @@
+---
+title: "LA Street Slopes"
+output: html_notebook
+---
+### Project Background
+For the LADOT Play Streets Program, I was asked if we had a layer that had the following information: 
+
+1. Street Classification
+2. Street Width
+3. Street Slope
+
+The street classification system is part of the street centerline file, maintained by the Los Angeles Department of Public Works Bureau of Engineering and available at the City's GeoHub [here](http://geohub.lacity.org/datasets/d3cd48afaacd4913b923fd98c6591276_36). Street width is contained in a slightly different version of the same centerline file, maintained by the Bureau of Street Services, and available as part of the 'Street Pavement Condition' layer on the City's GeoHub [here](http://geohub.lacity.org/datasets/2d945910272548a6ae0b57126000669a_0).
+
+However, there is not readily available layer with street slope already calculated, so I decided to create one myself, using [this blog post](http://www.datapointed.net/2009/11/the-steeps-of-san-francisco/) as a guide. The author, Stephen Von Worley, combined the [National Elevation Dataset's](https://nationalmap.gov/elevation.html) 1/3-second data with the [OpenStreetMap](http://www.openstreetmap.org/) grid to produce his result. For this project, I combined the same elevation data with the two layers I mentioned above.
+
+Before starting this project, I went ahead and downloaded the two street centerline shapefiles as well as the "USGS NED 1/3 arc-second 2013 1 x 1 degree ArcGrid" elevation data. For the City of Los Angeles, I needed to download two data elevation tiles: [n35w119](https://www.sciencebase.gov/catalog/item/581d2227e4b08da350d54373) (Northern LA), and [n34w119](https://www.sciencebase.gov/catalog/item/581d2217e4b08da350d541c7) (Southern LA). Also, in order to calculate the slope for each street segment, my plan was to calculate the elevation at each end point of the street segment. I could generate an endpoint file from the centerline network, but there is already one available on the GeoHub [here](http://geohub.lacity.org/datasets/0372aa1fb42a4e29adb9caadcfb210bb_9). This intersections layer has IDs that can be easily joined to the street centerline file for the slope calculation.
+
+### Project Tools
+
+* __sf__: Native support for simple features; [here](http://strimas.com/r/tidy-sf/) is a good overview of the package
+* __tidyverse__: Collection of R packages for datascience, including tidyr and dplyr
+* __leaflet__: for viewing our output on a web map 
+
+```{r}
+# load libraries
+library(sf)
+library(tidyverse)
+library(leaflet)
+
+# import street data
+bss <- st_read("Data/Street_Pavement_Condition.shp",quiet=TRUE)
+boe <- st_read("Data/Streets_Centerline.shp", quiet=TRUE)
+int <- st_read("Data/Intersections.shp", quiet=TRUE)
+
+# import elevation data
+la_n <- st_read()
+la_s <- st_read()
+```
+### Explore the Data
+
+__BOE Centerline__
+```{r}
+glimpse(boe)
+```
+__BSS Centerline / Street Pavement Condition__
+```{r}
+glimpse(bss)
+```
+### Merge the Centerline Files
+Both have quite a bit of unneeded information that we can trim out when we do the merge. Since the BSS version of the centerline file contains the street width and the BOE version contains the street classification, we need to merge them (and trim out any other unneeded columns) into one street centerline file. The BSS centerline file is slightly more restrictive -- only containing streets that are maintained by the City of Los Angeles -- so it will have fewer streets compared to the BOE one. I'll merge the BOE file with that one.
+```{r}
+# trim bss centerline
+bss <- bss %>%
+  select(SECT_ID, PRIME, FROM_, TO_, SURF1, ZLENGTH, ZWIDTH, geometry) %>%
+  rename(sect.id = 'SECT_ID',
+         street = 'PRIME',
+         from = 'FROM_',
+         to = 'TO_',
+         surface = 'SURF1',
+         length.ft = 'ZLENGTH',
+         width.ft = 'ZWIDTH',
+         geom = 'geometry')
+
+# trim boe centerline
+boe <- boe %>%
+  select(ASSETID, INT_ID_FRO, INT_ID_TO, SECT_ID, OLD_STREET, Street_Des) %>%
+  rename(asset.id = 'ASSETID',
+         fromint.id = 'INT_ID_FRO',
+         toint.id = 'INT_ID_TO',
+         sect.id = 'SECT_ID',
+         old.desig = 'OLD_STREET',
+         new.desig = 'Street_Des')
+
+# left-join bss <- boe
+streets <- bss %>%
+  left_join(boe, by="sect.id")
+```
+
+
+
