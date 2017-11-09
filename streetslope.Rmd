@@ -13,7 +13,9 @@ The street classification system is part of the street centerline file, maintain
 
 However, there is not readily available layer with street slope already calculated, so I decided to create one myself, using [this blog post](http://www.datapointed.net/2009/11/the-steeps-of-san-francisco/) as a guide. The author, Stephen Von Worley, combined the [National Elevation Dataset's](https://nationalmap.gov/elevation.html) 1/3-second data with the [OpenStreetMap](http://www.openstreetmap.org/) grid to produce his result. For this project, I combined the same elevation data with the two layers I mentioned above. Another option in R that I could have pursued included utiling the R package `elevatr`, which includes querys for elevation data for a bunch of different APIs. Most of the APIs don't provide access to Digital Elevation Models, which is the most precise elevation data, and definitely necessary for this project. Mapzen, though it does provide API access to raster layers and DEM-based querying API, it has rate limits, so in this case it was just easier to download the DEM raste data and query from there.
 
-Before starting this project, I went ahead and downloaded the two street centerline shapefiles as well as the "USGS NED 1/3 arc-second 2013 1 x 1 degree ArcGrid" elevation data. For the City of Los Angeles, I needed to download two data elevation tiles: [n35w119](https://www.sciencebase.gov/catalog/item/581d2227e4b08da350d54373) (Northern LA), and [n34w119](https://www.sciencebase.gov/catalog/item/581d2217e4b08da350d541c7) (Southern LA). Also, in order to calculate the slope for each street segment, my plan was to calculate the elevation at each end point of the street segment. I could generate an endpoint file from the centerline network, but there is already one available on the GeoHub [here](http://geohub.lacity.org/datasets/0372aa1fb42a4e29adb9caadcfb210bb_9). This intersections layer has IDs that can be easily joined to the street centerline file for the slope calculation.
+Before starting this project, I went ahead and downloaded the two street centerline shapefiles as well as the "USGS NED 1/3 arc-second 2013 1 x 1 degree ArcGrid" elevation data. For the City of Los Angeles, I needed to download two data elevation tiles: [n35w119](https://www.sciencebase.gov/catalog/item/581d2227e4b08da350d54373) (Northern LA), and [n34w119](https://www.sciencebase.gov/catalog/item/581d2217e4b08da350d541c7) (Southern LA). These NED data are at resolutions of 1/3 arc-second (approx. 10 meters) and in some areas at 1/9 arc-second (approx. 3 feet). This is precise enough for the task at hand.
+
+In order to calculate the slope for each street segment, my plan was to calculate the elevation at each end point of the street segment. I could generate an endpoint file from the centerline network, but there is already one available on the GeoHub [here](http://geohub.lacity.org/datasets/0372aa1fb42a4e29adb9caadcfb210bb_9). This intersections layer has IDs that can be easily joined to the street centerline file for the slope calculation.
 
 ### Project Tools
 
@@ -28,12 +30,12 @@ Before starting this project, I went ahead and downloaded the two street centerl
 ```{r}
 # load libraries
 library(sf)
-library(tidyverse)
+library(dplyr)
 library(leaflet)
 
 # import street data
 bss <- st_read("Data/Street_Pavement_Condition.shp",quiet=TRUE)
-boe <- st_read("C:/Users/dotcid034/Documents/NonGitHubData/boe/Streets_Centerline.shp", quiet=TRUE)
+boe <- st_read("C:/Users/Tim/Documents/data/street-slope-la/Streets_Centerline/Streets_Centerline.shp", quiet=TRUE)
 int <- st_read("Data/Intersections.shp", quiet=TRUE)
 ```
 ### Explore the Data
@@ -49,11 +51,11 @@ glimpse(bss)
 ### Clean / Prepare Intersection & Centerline Files
 For the centerline files, both have quite a bit of unneeded information that we can trim out when we do the merge. Since the BSS version of the centerline file contains the street width and the BOE version contains the street classification, we need to merge them (and trim out any other unneeded columns) into one street centerline file. The BSS centerline file is slightly more restrictive -- only containing streets that are maintained by the City of Los Angeles -- so it will have fewer streets compared to the BOE one. I'll merge the BOE file with that one. 
 
-Tip: Once I started bringing in the raster data, I began getting an error while runing the `select()` function. I found out from [this blog post](https://remi-daigle.github.io/2017-CHONe-Data/dataviz.nb.html#) that the error is a result of several packages having a `select()` function (in this case the function from the `raster` package is superceding the `dplyr` one). 
+Tip: Once I started bringing in the raster data, I began getting an error while runing the `select()` function. I found out from [this blog post](https://remi-daigle.github.io/2017-CHONe-Data/dataviz.nb.html#) that the error is a result of several packages having a `select()` function (in this case the function from the `raster` package is superceding the `dplyr` one). The solution is simple -- make sure to explicitly call out which package you are using with following syntax: `package::function()`
 ```{r}
 # trim bss centerline
 bss <- bss %>%
-  select(SECT_ID, PRIME, FROM_, TO_, SURF1, ZLENGTH, ZWIDTH, geometry) %>%
+  dplyr::select(SECT_ID, PRIME, FROM_, TO_, SURF1, ZLENGTH, ZWIDTH, geometry) %>%
   rename(sect.id = 'SECT_ID',
          street = 'PRIME',
          from = 'FROM_',
@@ -66,7 +68,7 @@ bss <- bss %>%
 
 # trim boe centerline
 boe <- boe %>%
-  select(ASSETID, INT_ID_FRO, INT_ID_TO, SECT_ID, OLD_STREET, Street_Des) %>%
+  dplyr::select(ASSETID, INT_ID_FRO, INT_ID_TO, SECT_ID, OLD_STREET, Street_Des) %>%
   rename(asset.id = 'ASSETID',
          fromint.id = 'INT_ID_FRO',
          toint.id = 'INT_ID_TO',
@@ -78,7 +80,8 @@ boe <- boe %>%
 
 # left join bss <- boe
 streets <- bss %>%
-  inner_join(boe, by='sect.id')
+  inner_join(boe, by='sect.id') %>%
+  mutate(length.m = 3.28084*length.ft)
 ```
 Let's take a peek at the merged dataframe:
 ```{r}
@@ -91,43 +94,83 @@ glimpse(int)
 Now I'll trim away the unneeded columns:
 ```{r}
 int <- int %>%
-  select(ASSETID, CL_NODE_ID, X, Y, LAT, LON, geometry) %>%
+  dplyr::select(ASSETID, CL_NODE_ID, X, Y, LAT, LON) %>%
   rename(asset.id = 'ASSETID',
          clnode.id = 'CL_NODE_ID',
          x = 'X',
          y = 'Y',
          lat = 'LAT',
-         lon = 'LON',
-         geom = 'geometry')
+         lon = 'LON')
 ```
 ### Extract Elevation Data from Raster Layer
 In order to calculate the slope of each street segment, I first need to calculate the elevation at each of these street segment endpoints. In order to get the elevation at each of the endpoints (intersections), I am going to extract this elevation data from the raster elevation image that I pulled from the National Elevation Dataset.
 
-As an aside: Another (perhaps easier) method that I could have used to extract elevation data was through the `elevatr` package, which 
+Note: the `sf` package was released on CRAN on January 2017, while the latest release of the `raster` package was back in June 2016. Since there is no interoperability between these two packages, I add the extra step of first converting the `sf` object into an `sp` object before working with the raster image. 
 
 ```{r}
 library(raster)
 
-# import elevation data
-la_n <- raster("C:/Users/dotcid034/Documents/NonGitHubData/n35w119/grdn35w119_13")
-la_s <- raster("C:/Users/dotcid034/Documents/NonGitHubData/n34w119/grdn34w119_13")
+# import elevation data & merge into one raster layer
+la_n <- raster("C:/Users/Tim/Documents/data/street-slope-la/n35w119/grdn35w119_13")
+la_s <- raster("C:/Users/Tim/Documents/data/street-slope-la/n34w119/grdn34w119_13")
+la_elev <- merge(la_n, la_s)
+
+# preview the merged raster
+plot(la_elev)
 ```
 
--look at documentation for interpreting the extraction
+### Extract Elevation Data from Raster Layer
+Note: the `sf` package was released on CRAN on January 2017, while the latest release of the `raster` package was back in June 2016. Since there is no interoperability between these two packages, I add the extra step of first converting the `sf` object into an `sp` object before working with the raster image. According to the documentation, the elevation values are in meters.
+```{r}
+# cast as sp object, extract elevation, convert back to sf object
+int_sp <- as(int, "Spatial")
+int_elev <- extract(la_elev,
+                    int_sp,
+                    method='simple')
+int_elev <- cbind(int, int_elev)
+int_elev <- int_elev %>%
+  dplyr::select(clnode.id, int_elev) %>%
+  st_set_geometry(NULL)
+  
+```
+### Calculate the slope of each street
+Now that I have the elevation at each of the intersection points, I can calculate the slope of the each street segment by joining the intersection to the (updated) street centerline file. I need to do the join twice -- once for each side of the street.
+```{r}
+la_streets <- streets %>%
+  inner_join(int_elev, by=c("fromint.id" = "clnode.id")) %>%
+  rename(from.elev = "int_elev") %>%
+  inner_join(int_elev, by=c("toint.id" = "clnode.id")) %>%
+  rename(to.elev = "int_elev") %>%
+  mutate(slope = (abs((from.elev - to.elev))/(length.m))*100) %>%
+  filter(slope > 5)
+```
+
 
 ### Fun Aside: What are the steepest streets in LA?
 -include a google streetview link at the locations
+-subset out for the neighborhoods
 
 ### Display the Map
 ```{r}
-# map <- leaflet() %>%
-#   addProviderTiles(providers$Stamen.TonerLite) %>%
-#   addPolylines(
-#     color = '#0E016F',
-#     weight = 1,
-#     opacity = 1,
-#     data = streets
-#   )
-# 
-# map
+# Set Color Palette
+pal <- colorNumeric(
+  palette = "YlGnBu",
+  domain = la_streets$slope
+)
+
+# Create the leaflet map
+map <- leaflet() %>%
+  addProviderTiles(providers$Stamen.TonerLite) %>%
+  addPolylines(
+    color = ~pal(slope),
+    weight = 1,
+    opacity = 1,
+    data = la_streets) %>%
+  addLegend(pal = pal, 
+          values = la_streets$slope, 
+          position = "bottomright", 
+          title = "Slope",
+          labFormat = labelFormat(suffix = "%"))
+
+map
 ```
