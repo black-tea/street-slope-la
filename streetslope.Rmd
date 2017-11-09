@@ -1,6 +1,9 @@
 ---
 title: "LA Street Slopes"
-output: html_notebook
+output:
+  html_notebook: default
+  html_document: default
+  toc: yes
 ---
 ### Project Background
 For the LADOT Play Streets Program, I was asked if we had a layer that had the following information: 
@@ -49,11 +52,11 @@ glimpse(bss)
 ### Clean / Prepare Intersection & Centerline Files
 For the centerline files, both have quite a bit of unneeded information that we can trim out when we do the merge. Since the BSS version of the centerline file contains the street width and the BOE version contains the street classification, we need to merge them (and trim out any other unneeded columns) into one street centerline file. The BSS centerline file is slightly more restrictive -- only containing streets that are maintained by the City of Los Angeles -- so it will have fewer streets compared to the BOE one. I'll merge the BOE file with that one. 
 
-Tip: Once I started bringing in the raster data, I began getting an error while runing the `select()` function. I found out from [this blog post](https://remi-daigle.github.io/2017-CHONe-Data/dataviz.nb.html#) that the error is a result of several packages having a `select()` function (in this case the function from the `raster` package is superceding the `dplyr` one). 
+Tip: Once I started bringing in the raster data, I began getting an error while runing the `select()` function. I found out from [this blog post](https://remi-daigle.github.io/2017-CHONe-Data/dataviz.nb.html#) that the error is a result of several packages having a `select()` function (in this case the function from the `raster` package is superceding the `dplyr` one). To solve the mixup, just make sure to explicitly designate which package the `select()` function is from using the syntax `package::function()` when it is not clear.
 ```{r}
 # trim bss centerline
 bss <- bss %>%
-  select(SECT_ID, PRIME, FROM_, TO_, SURF1, ZLENGTH, ZWIDTH, geometry) %>%
+  dplyr::select(SECT_ID, PRIME, FROM_, TO_, SURF1, ZLENGTH, ZWIDTH, geometry) %>%
   rename(sect.id = 'SECT_ID',
          street = 'PRIME',
          from = 'FROM_',
@@ -66,7 +69,7 @@ bss <- bss %>%
 
 # trim boe centerline
 boe <- boe %>%
-  select(ASSETID, INT_ID_FRO, INT_ID_TO, SECT_ID, OLD_STREET, Street_Des) %>%
+  dplyr::select(ASSETID, INT_ID_FRO, INT_ID_TO, SECT_ID, OLD_STREET, Street_Des) %>%
   rename(asset.id = 'ASSETID',
          fromint.id = 'INT_ID_FRO',
          toint.id = 'INT_ID_TO',
@@ -91,7 +94,7 @@ glimpse(int)
 Now I'll trim away the unneeded columns:
 ```{r}
 int <- int %>%
-  select(ASSETID, CL_NODE_ID, X, Y, LAT, LON, geometry) %>%
+  dplyr::select(ASSETID, CL_NODE_ID, X, Y, LAT, LON, geometry) %>%
   rename(asset.id = 'ASSETID',
          clnode.id = 'CL_NODE_ID',
          x = 'X',
@@ -103,7 +106,7 @@ int <- int %>%
 ### Extract Elevation Data from Raster Layer
 In order to calculate the slope of each street segment, I first need to calculate the elevation at each of these street segment endpoints. In order to get the elevation at each of the endpoints (intersections), I am going to extract this elevation data from the raster elevation image that I pulled from the National Elevation Dataset.
 
-As an aside: Another (perhaps easier) method that I could have used to extract elevation data was through the `elevatr` package, which 
+But, before I even get there, I need to load the two raster data sets (one for the northern part of LA, one for the sourthern part of LA) and merge them using the `raster` package. We can then view the result:
 
 ```{r}
 library(raster)
@@ -111,9 +114,22 @@ library(raster)
 # import elevation data
 la_n <- raster("C:/Users/dotcid034/Documents/NonGitHubData/n35w119/grdn35w119_13")
 la_s <- raster("C:/Users/dotcid034/Documents/NonGitHubData/n34w119/grdn34w119_13")
+
+# merge the raster files
+la_raster <- merge(la_n, la_s)
+
+# view the resulting pot
+plot(la_raster)
 ```
 
 -look at documentation for interpreting the extraction
+- because the latest version of raster was before the release of th `sf` package, we are going to need to do some workarounds.
+```{r}
+int.df <- int %>%
+  select(asset.id, lat, lon)
+
+values <- extract(la_raster, int)
+```
 
 ### Fun Aside: What are the steepest streets in LA?
 -include a google streetview link at the locations
