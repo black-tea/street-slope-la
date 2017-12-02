@@ -1,9 +1,20 @@
 ---
 title: "LA Street Slopes"
+<<<<<<< HEAD
+output:
+  html_notebook: default
+  html_document: default
+  toc: yes
+=======
 output: 
   md_document:
     toc: TRUE
+<<<<<<< HEAD
 always_allow_html: yes
+=======
+  always_allow_html: yes
+>>>>>>> origin/master
+>>>>>>> ab384e6cd3f017dce9e7d273fac41bf48f398611
 ---
 ## Project Background
 For the LADOT Play Streets Program, I was asked if we had a layer that had the following information: 
@@ -58,8 +69,16 @@ glimpse(bss)
 ### Data Prep
 For the centerline files, both have quite a bit of unneeded information that we can trim out when we do the merge. Since the BSS version of the centerline file contains the street width and the BOE version contains the street classification, we need to merge them (and trim out any other unneeded columns) into one street centerline file. The BSS centerline file is slightly more restrictive -- only containing streets that are maintained by the City of Los Angeles -- so it will have fewer streets compared to the BOE one. I'll merge the BOE file with that one.
 
+<<<<<<< HEAD
+Tip: Once I started bringing in the raster data, I began getting an error while runing the `select()` function. I found out from [this blog post](https://remi-daigle.github.io/2017-CHONe-Data/dataviz.nb.html#) that the error is a result of several packages having a `select()` function (in this case the function from the `raster` package is superceding the `dplyr` one). To solve the mixup, just make sure to explicitly designate which package the `select()` function is from using the syntax `package::function()` when it is not clear.
+=======
 Note: Once I started bringing in the raster data, I began getting an error while runing the `select()` function. I found out from [this blog post](https://remi-daigle.github.io/2017-CHONe-Data/dataviz.nb.html#) that the error is a result of several packages having a `select()` function (in this case the function from the `raster` package is superceding the `dplyr` one). The solution is simple -- make sure to explicitly call out which package you are using with following syntax: `package::function()`
+<<<<<<< HEAD
 ```{r, echo=FALSE}
+=======
+>>>>>>> origin/master
+```{r}
+>>>>>>> ab384e6cd3f017dce9e7d273fac41bf48f398611
 # trim bss centerline
 bss <- bss %>%
   dplyr::select(SECT_ID, PRIME, FROM_, TO_, SURF1, ZLENGTH, ZWIDTH, geometry) %>%
@@ -76,6 +95,9 @@ bss <- bss %>%
 
 # trim boe centerline
 boe <- boe %>%
+<<<<<<< HEAD
+  dplyr::select(ASSETID, INT_ID_FRO, INT_ID_TO, SECT_ID, OLD_STREET, Street_Des) %>%
+=======
   dplyr::select(ASSETID,
                 INT_ID_FRO,
                 INT_ID_TO,
@@ -83,6 +105,7 @@ boe <- boe %>%
                 STNAME,
                 OLD_STREET,
                 Street_Des) %>%
+>>>>>>> origin/master
   rename(asset.id = 'ASSETID',
          fromint.id = 'INT_ID_FRO',
          toint.id = 'INT_ID_TO',
@@ -99,7 +122,11 @@ glimpse(int)
 Now I'll trim away the unneeded columns:
 ```{r}
 int <- int %>%
+<<<<<<< HEAD
+  dplyr::select(ASSETID, CL_NODE_ID, X, Y, LAT, LON, geometry) %>%
+=======
   dplyr::select(ASSETID, CL_NODE_ID, FROM_ST, TO_ST, X, Y, LAT, LON) %>%
+>>>>>>> origin/master
   rename(asset.id = 'ASSETID',
          clnode.id = 'CL_NODE_ID',
          from = 'FROM_ST',
@@ -109,6 +136,32 @@ int <- int %>%
 ```
 ### Load Raster Layers
 In order to calculate the slope of each street segment, I first need to calculate the elevation at each of these street segment endpoints. In order to get the elevation at each of the endpoints (intersections), I am going to extract this elevation data from the raster elevation image that I pulled from the National Elevation Dataset.
+<<<<<<< HEAD
+
+But, before I even get there, I need to load the two raster data sets (one for the northern part of LA, one for the sourthern part of LA) and merge them using the `raster` package. We can then view the result:
+
+```{r}
+library(raster)
+
+# import elevation data
+la_n <- raster("C:/Users/dotcid034/Documents/NonGitHubData/n35w119/grdn35w119_13")
+la_s <- raster("C:/Users/dotcid034/Documents/NonGitHubData/n34w119/grdn34w119_13")
+
+# merge the raster files
+la_raster <- merge(la_n, la_s)
+
+# view the resulting pot
+plot(la_raster)
+```
+
+-look at documentation for interpreting the extraction
+- because the latest version of raster was before the release of th `sf` package, we are going to need to do some workarounds.
+```{r}
+int.df <- int %>%
+  select(asset.id, lat, lon)
+
+values <- extract(la_raster, int)
+=======
 ```{r}
 library(raster)
 
@@ -140,7 +193,17 @@ int_elev <- int_elev %>%
 glimpse(int_elev)
 ```
 ### Street Slope
+<<<<<<< HEAD
 Now that I have the elevation at each of the intersection points, I can calculate the slope of the each street segment by joining the intersection to the (updated) street centerline file. I need to do the join twice -- once for each side of the street. Before that though, I am going to calcualte the length of the BOE segment, which also requires projecting it. During this process, I am also going to filter out any of the private / closed / unknown roads. 
+=======
+Now that I have the elevation at each of the intersection points, I can calculate the slope of the each street segment by joining the intersection to the (updated) street centerline file. I need to do the join twice -- once for each side of the street. Before that though, I am going to calcualte the length of the BOE segment, which also requires projecting it.
+```{r}
+boe <- boe %>%
+  mutate(st.len = st_length()) %>% # get length
+>>>>>>> origin/master
+```
+
+>>>>>>> ab384e6cd3f017dce9e7d273fac41bf48f398611
 ```{r}
 streets <- boe %>% 
   mutate(len = st_length(boe)) %>% # get length
